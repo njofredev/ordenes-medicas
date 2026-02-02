@@ -43,11 +43,10 @@ def get_base64_bin(file_path):
         data = f.read()
     return base64.b64encode(data).decode()
 
-# 2. CONFIGURACIÓN E IDENTIDAD (Colores exactos del manual)
+# 2. IDENTIDAD CORPORATIVA (Colores Manual)
 AZUL_PRIMARIO = "#0F8FEF"
 VERDE_PRIMARIO = "#23B574"
 AZUL_SECUNDARIO = "#102742"
-BLANCO = "#FFFFFF"
 
 API_BASE_URL = "https://api.policlinicotabancura.cl"
 
@@ -62,36 +61,13 @@ SUCURSAL = {
 
 st.set_page_config(page_title="Portal Tabancura", page_icon="🏥", layout="wide")
 
-# CSS para UI/UX basado en el manual de identidad
+# CSS para UI/UX
 st.markdown(f"""
     <style>
-    /* Botón Primario - Azul Manual */
-    .stButton>button[kind="primary"] {{
-        background-color: {AZUL_PRIMARIO} !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-    }}
-    
-    /* Botón Añadir - Verde Manual */
-    .verde-btn button {{
-        background-color: {VERDE_PRIMARIO} !important;
-        color: white !important;
-        border: none !important;
-    }}
-
-    /* Tags de multiselect - Azul Manual */
-    span[data-baseweb="tag"] {{
-        background-color: {AZUL_PRIMARIO} !important;
-        color: white !important;
-    }}
-
-    .logo-link img {{
-        transition: transform 0.3s ease;
-    }}
-    .logo-link img:hover {{
-        transform: scale(1.05);
-    }}
+    .stButton>button[kind="primary"] {{ background-color: {AZUL_PRIMARIO} !important; border: none !important; color: white !important; }}
+    .btn-verde button {{ background-color: {VERDE_PRIMARIO} !important; color: white !important; border: none !important; }}
+    span[data-baseweb="tag"] {{ background-color: {AZUL_PRIMARIO} !important; color: white !important; }}
+    .logo-container:hover {{ transform: scale(1.03); transition: 0.3s; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -102,7 +78,7 @@ class TabancuraPDF(FPDF):
 
     def header(self):
         self.set_font('Helvetica', 'B', 14)
-        self.set_text_color(16, 39, 66) # Azul Secundario del manual
+        self.set_text_color(16, 39, 66)
         self.cell(0, 7, self.clean_txt(SUCURSAL["nombre"]), ln=True, align='L')
         self.set_font('Helvetica', '', 9)
         self.set_text_color(80, 80, 80)
@@ -127,52 +103,48 @@ class TabancuraPDF(FPDF):
 
 # 3. ENCABEZADO
 with st.container():
-    col_logo, col_info = st.columns([1, 4])
-    with col_logo:
+    c_logo, c_info = st.columns([1, 4])
+    with c_logo:
         if os.path.exists("logo.png"):
-            img_b64 = get_base64_bin("logo.png")
-            st.markdown(f'<a href="{SUCURSAL["web"]}" target="_blank" class="logo-link"><img src="data:image/png;base64,{img_b64}" width="170"></a>', unsafe_allow_html=True)
-    
-    with col_info:
+            b64 = get_base64_bin("logo.png")
+            st.markdown(f'<a href="{SUCURSAL["web"]}" target="_blank" class="logo-container"><img src="data:image/png;base64,{b64}" width="180"></a>', unsafe_allow_html=True)
+    with c_info:
         st.title("Gestión de Cotizaciones y Órdenes Médicas")
-        st.markdown(f"**📍 Casa Matriz:** {SUCURSAL['direccion']} | **📞 Central:** {SUCURSAL['telefono']}")
-        n1, n2, n3, _ = st.columns([1, 1, 1, 2])
-        n1.link_button("🌐 Sitio Web", SUCURSAL["web"], use_container_width=True, help="Página oficial")
-        n2.link_button("💰 Cotizador", SUCURSAL["cotizador"], use_container_width=True, help="Cotizador online")
-        n3.link_button("📂 Consulta", SUCURSAL["consulta"], use_container_width=True, help="Portal de exámenes")
+        st.markdown(f"📍 {SUCURSAL['direccion']} | 📞 {SUCURSAL['telefono']}")
+        n1, n2, n3, _ = st.columns([1, 1, 1, 1])
+        n1.link_button("🌐 Web", SUCURSAL["web"], use_container_width=True)
+        n2.link_button("💰 Cotizador", SUCURSAL["cotizador"], use_container_width=True)
+        n3.link_button("📂 Consulta", SUCURSAL["consulta"], use_container_width=True)
 
 st.divider()
 
-# 4. LÓGICA DE SESIÓN
+# 4. LÓGICA DE DATOS
 if 'tabla_maestra' not in st.session_state: st.session_state.tabla_maestra = pd.DataFrame()
 if 'paciente_activo' not in st.session_state: st.session_state.paciente_activo = None
 if 'resultados' not in st.session_state: st.session_state.resultados = []
 
 df_aranceles = cargar_aranceles()
 
-# 5. BÚSQUEDA
 with st.form("search_form"):
     st.subheader("🔍 Localizar Paciente")
     c1, c2 = st.columns([1, 2])
-    tipo = c1.selectbox("Criterio:", ["RUT", "Folio"], help="Seleccione método de búsqueda")
-    val_input = c2.text_input("Identificador:", placeholder="Ej: 12.345.678-9", help="RUT con puntos y guion o Folio")
+    tipo = c1.selectbox("Criterio:", ["RUT", "Folio"])
+    val_in = c2.text_input("Identificador:", placeholder="Ej: 22.222.222-2")
     if st.form_submit_button("Consultar Base de Datos"):
-        val_bus = val_input
-        if tipo == "RUT": val_bus = formatear_rut(val_input)
+        val_b = formatear_rut(val_in) if tipo == "RUT" else val_in
         try:
-            path = f"buscar/{val_bus}" if tipo == "RUT" else f"folio/{val_bus}"
+            path = f"buscar/{val_b}" if tipo == "RUT" else f"folio/{val_b}"
             res = requests.get(f"{API_BASE_URL}/cotizaciones/{path}")
             if res.status_code == 200:
-                api_res = res.json() if isinstance(res.json(), list) else [res.json()]
-                st.session_state.resultados = api_res
+                api_data = res.json() if isinstance(res.json(), list) else [res.json()]
+                st.session_state.resultados = api_data
                 st.session_state.paciente_activo = None
-            else: st.warning("Sin resultados.")
+            else: st.warning("No se encontraron registros.")
         except: st.error("Error de conexión.")
 
-# 6. GESTIÓN
 if st.session_state.resultados:
     opcs = {f"Folio {c['folio']} | {c['nombre_paciente']}": c for c in st.session_state.resultados}
-    sel = st.selectbox("Registros:", list(opcs.keys()))
+    sel = st.selectbox("Registros encontrados:", list(opcs.keys()))
     if st.button("📥 CARGAR DATOS SELECCIONADOS", type="primary", use_container_width=True):
         p = opcs[sel]
         st.session_state.paciente_activo = p
@@ -186,31 +158,33 @@ if st.session_state.resultados:
 
 if st.session_state.paciente_activo:
     p = st.session_state.paciente_activo
-    rut_p = formatear_rut(p.get("documento_id") or p.get("rut_paciente") or "---")
-    st.success(f"📌 **Paciente:** {p['nombre_paciente']} | **RUT:** {rut_p}")
+    rut_fmt = formatear_rut(p.get("documento_id") or p.get("rut_paciente") or "---")
+    st.success(f"📌 **Paciente:** {p['nombre_paciente']} | **RUT:** {rut_fmt}")
     
     st.subheader("➕ Agregar Prestaciones Adicionales")
-    extras = st.multiselect("Buscar en arancel:", df_aranceles['display'].tolist())
-    st.markdown('<div class="verde-btn">', unsafe_allow_html=True)
-    if st.button("Añadir a la Orden Médica"):
+    extras = st.multiselect("Buscar exámenes en arancel:", df_aranceles['display'].tolist())
+    st.markdown('<div class="btn-verde">', unsafe_allow_html=True)
+    if st.button("Añadir a la Orden Médica", use_container_width=True):
         nuevos = df_aranceles[df_aranceles['display'].isin(extras)].drop(columns=['display'])
         st.session_state.tabla_maestra = pd.concat([st.session_state.tabla_maestra, nuevos], ignore_index=True).drop_duplicates()
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.subheader("📝 Edición de Aranceles y Detalles")
-    # CORRECCIÓN: st.data_editor NO admite el parámetro 'help'
+    st.info("💡 **Ayuda:** Doble clic para editar celdas. Para eliminar filas, selecciónelas a la izquierda y presione 'Supr'.")
     df_ed = st.data_editor(st.session_state.tabla_maestra, num_rows="dynamic", width="stretch")
     st.session_state.tabla_maestra = df_ed
 
     st.write("---")
     col1, col2 = st.columns(2)
+    
+    # Lógica de descarga CORREGIDA para entornos Coolify/Linux
     with col1:
         if st.button("📄 GENERAR PRESUPUESTO PDF", use_container_width=True):
             pdf_c = TabancuraPDF("PRESUPUESTO MÉDICO", orientation='L')
             pdf_c.add_page()
             pdf_c.set_font('Helvetica', 'B', 10); pdf_c.set_fill_color(245, 245, 245)
-            pdf_c.cell(0, 10, pdf_c.clean_txt(f" PACIENTE: {p['nombre_paciente']} | RUT: {rut_p}"), ln=1, fill=True)
+            pdf_c.cell(0, 10, pdf_c.clean_txt(f" PACIENTE: {p['nombre_paciente']} | RUT: {rut_fmt}"), ln=1, fill=True)
             pdf_c.ln(2)
             cols_map = {'Fonasa': 'Bono Fonasa', 'Copago': 'Copago', 'P. Gral': 'Particular General', 'P. Pref': 'Particular Preferencial'}
             pdf_c.set_font('Helvetica', 'B', 8); pdf_c.set_fill_color(16, 39, 66); pdf_c.set_text_color(255)
@@ -231,14 +205,18 @@ if st.session_state.paciente_activo:
             pdf_c.set_font('Helvetica', 'B', 9); pdf_c.set_fill_color(230, 230, 230)
             pdf_c.cell(120, 10, "TOTAL ESTIMADO", 1, 0, 'R', True)
             for col_ex in cols_map.values(): pdf_c.cell(31, 10, fmt_clp(tots[col_ex]), 1, 0, 'R', True)
-            st.download_button("📥 Descargar Presupuesto", data=pdf_c.output(dest='S').encode('latin-1'), file_name=f"Presupuesto_{p['folio']}.pdf", mime="application/pdf", use_container_width=True)
+            
+            # CORRECCIÓN DE BYTES
+            out = pdf_c.output(dest='S')
+            data_pdf = bytes(out) if isinstance(out, (bytes, bytearray)) else out.encode('latin-1')
+            st.download_button("📥 Descargar Presupuesto", data=data_pdf, file_name=f"Presupuesto_{p['folio']}.pdf", mime="application/pdf", use_container_width=True)
 
     with col2:
         if st.button("⚕️ GENERAR ORDEN CLÍNICA", use_container_width=True):
             pdf_o = TabancuraPDF("ORDEN CLÍNICA")
             pdf_o.add_page()
             pdf_o.set_font('Helvetica', 'B', 10); pdf_o.set_fill_color(245, 245, 245)
-            pdf_o.cell(0, 10, pdf_o.clean_txt(f" PACIENTE: {p['nombre_paciente']} | RUT: {rut_p}"), ln=1, fill=True)
+            pdf_o.cell(0, 10, pdf_o.clean_txt(f" PACIENTE: {p['nombre_paciente']} | RUT: {rut_fmt}"), ln=1, fill=True)
             pdf_o.ln(5)
             pdf_o.set_fill_color(16, 39, 66); pdf_o.set_text_color(255)
             pdf_o.cell(35, 10, "CÓDIGO", 1, 0, 'C', True); pdf_o.cell(155, 10, "PRESTACIÓN", 1, 1, 'C', True)
@@ -248,4 +226,8 @@ if st.session_state.paciente_activo:
                 pdf_o.cell(155, 8, pdf_o.clean_txt(str(r.get('Nombre prestación en Fonasa o Particular', ''))[:80]), 1, 1, 'L')
             pdf_o.ln(25); pdf_o.line(70, pdf_o.get_y(), 140, pdf_o.get_y())
             pdf_o.cell(0, 8, pdf_o.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
-            st.download_button("📥 Descargar Orden", data=pdf_o.output(dest='S').encode('latin-1'), file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf", use_container_width=True)
+            
+            # CORRECCIÓN DE BYTES
+            out_o = pdf_o.output(dest='S')
+            data_ord = bytes(out_o) if isinstance(out_o, (bytes, bytearray)) else out_o.encode('latin-1')
+            st.download_button("📥 Descargar Orden", data=data_ord, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf", use_container_width=True)
