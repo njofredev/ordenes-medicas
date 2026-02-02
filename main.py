@@ -4,6 +4,7 @@ import pandas as pd
 from fpdf import FPDF
 from datetime import datetime
 import os
+import io
 
 # --- CONFIGURACIÓN SUCURSAL ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
@@ -20,14 +21,16 @@ SUCURSAL = {
 
 st.set_page_config(page_title="Portal Tabancura", page_icon="🏥", layout="wide")
 
-# Estilos CSS para mejorar la estética y compactar elementos
+# Estilos CSS mejorados para compactar la UI
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
-    .stButton>button {{ background-color: #002B5B; color: white; border-radius: 8px; font-weight: 600; width: 100%; }}
+    .stButton>button {{ background-color: #002B5B; color: white; border-radius: 8px; font-weight: 600; width: auto; min-width: 150px; padding: 0.5rem 2rem; }}
     .patient-header {{ background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #002B5B; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }}
     .stTextInput>div>div>input, .stSelectbox>div>div>div {{ padding: 5px 10px; }}
+    /* Ajuste de márgenes para los botones debajo de los campos */
+    .stFormSubmitButton {{ text-align: left; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -81,6 +84,7 @@ def cargar_aranceles():
         return df
     except: return pd.DataFrame()
 
+# Sesión
 if 'tabla_maestra' not in st.session_state: st.session_state.tabla_maestra = pd.DataFrame()
 if 'paciente_activo' not in st.session_state: st.session_state.paciente_activo = None
 if 'resultados' not in st.session_state: st.session_state.resultados = []
@@ -89,11 +93,14 @@ df_aranceles = cargar_aranceles()
 
 st.title("🏥 Gestión Clínica Tabancura")
 
+# --- BÚSQUEDA COMPACTA ---
 with st.form("search_form", clear_on_submit=False):
-    c1, c2, c3 = st.columns([1, 2, 1])
+    # Campos en la misma fila pero compactos
+    c1, c2 = st.columns([1, 2])
     tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
     val = c2.text_input("Identificador:", placeholder="Ej: 12.345.678-9 o Folio")
-    submit_search = c3.form_submit_button("🔍 Buscar")
+    # Botón DEBAJO de los campos
+    submit_search = st.form_submit_button("🔍 Buscar")
 
 if submit_search:
     if val:
@@ -104,18 +111,20 @@ if submit_search:
                 st.session_state.resultados = res.json() if isinstance(res.json(), list) else [res.json()]
                 st.session_state.paciente_activo = None
             elif tipo == "RUT":
-                st.info("RUT no registrado. Iniciando orden manual.")
+                st.info("RUT no registrado en Policlínico. Iniciando modo manual.")
                 st.session_state.paciente_activo = {"nombre_paciente": "PACIENTE NUEVO", "documento_id": val, "folio": "MANUAL", "fecha_nacimiento": "---"}
                 st.session_state.tabla_maestra = pd.DataFrame()
                 st.session_state.resultados = []
-        except: st.error("Error de conexión con la API.")
+        except: st.error("Sin conexión con el servidor local.")
 
+# Selección si hay múltiples resultados
 if st.session_state.resultados:
     st.write("---")
-    r1, r2 = st.columns([3, 1])
     opcs = {f"Folio {c['folio']} | {c['nombre_paciente']}": c for c in st.session_state.resultados}
-    sel = r1.selectbox("Seleccione el registro exacto:", list(opcs.keys()))
-    if r2.button("📥 Cargar Datos"):
+    # Campo arriba
+    sel = st.selectbox("Seleccione registro:", list(opcs.keys()))
+    # Botón abajo
+    if st.button("📥 Cargar Datos"):
         p = opcs[sel]
         st.session_state.paciente_activo = p
         rd = requests.get(f"{API_BASE_URL}/cotizaciones/detalle/{p['folio']}")
@@ -127,6 +136,7 @@ if st.session_state.resultados:
                                                      left_on='codigo_examen', right_on='Codigo Ingreso', how='left').drop(columns=['codigo_examen'])
             st.rerun()
 
+# --- ÁREA DE TRABAJO ---
 if st.session_state.paciente_activo:
     p = st.session_state.paciente_activo
     rut_p = p.get("documento_id") or p.get("rut_paciente") or p.get("rut") or "---"
@@ -136,9 +146,9 @@ if st.session_state.paciente_activo:
         <p style="margin:5px 0 0 0; font-size:0.9em;"><b>Folio:</b> {p["folio"]} | <b>RUT:</b> {rut_p} | <b>F. Nac:</b> {p.get("fecha_nacimiento", "---")}</p>
     </div>''', unsafe_allow_html=True)
     
-    a1, a2 = st.columns([3, 1])
-    extras = a1.multiselect("Agregar exámenes adicionales:", df_aranceles['display'].tolist())
-    if a2.button("➕ Añadir"):
+    # Campo de añadir arriba, botón abajo
+    extras = st.multiselect("Agregar prestaciones adicionales:", df_aranceles['display'].tolist())
+    if st.button("➕ Añadir a la lista"):
         nuevos = df_aranceles[df_aranceles['display'].isin(extras)].drop(columns=['display'])
         st.session_state.tabla_maestra = pd.concat([st.session_state.tabla_maestra, nuevos], ignore_index=True).drop_duplicates()
         st.rerun()
@@ -148,64 +158,63 @@ if st.session_state.paciente_activo:
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📄 GENERAR COTIZACIÓN"):
-            pdf = TabancuraPDF("PRESUPUESTO MÉDICO", orientation='L')
-            pdf.add_page()
-            pdf.set_font('Helvetica', 'B', 9); pdf.set_fill_color(245, 245, 245)
-            info = f" PACIENTE: {p['nombre_paciente']}  |  RUT: {rut_p}  |  FOLIO: {p['folio']}"
-            pdf.cell(0, 10, pdf.clean_txt(info), 0, 1, 'L', True)
-            
-            cols_map = {'Fonasa': 'Bono Fonasa', 'Copago': 'Copago', 'P. Gral': 'Particular General', 'P. Pref': 'Particular Preferencial'}
-            anchos = [20, 100, 31, 31, 31, 31]
-            pdf.set_font('Helvetica', 'B', 8); pdf.set_fill_color(*COLOR_NAVY); pdf.set_text_color(255)
-            for i, h in enumerate(['Código', 'Prestación'] + list(cols_map.keys())): pdf.cell(anchos[i], 10, pdf.clean_txt(h), 1, 0, 'C', True)
-            pdf.ln()
-            
-            pdf.set_text_color(0); pdf.set_font('Helvetica', '', 8)
-            tots = {k: 0 for k in cols_map.keys()}
-            for _, r in df_ed.iterrows():
-                n_full = str(r.get('Nombre prestación en Fonasa o Particular', ''))
-                nombre = (n_full[:55] + '...') if len(n_full) > 55 else n_full
-                pdf.cell(anchos[0], 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
-                pdf.cell(anchos[1], 8, pdf.clean_txt(nombre), 1, 0, 'L')
-                for i, (l, col_ex) in enumerate(cols_map.items()):
-                    val = pd.to_numeric(r.get(col_ex, 0), errors='coerce') or 0
-                    tots[l] += val
-                    pdf.cell(anchos[i+2], 8, fmt_clp(val), 1, 0, 'R')
-                pdf.ln()
-            
-            pdf.set_font('Helvetica', 'B', 9); pdf.set_fill_color(235, 235, 235)
-            pdf.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
-            for l in cols_map.keys(): pdf.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
-            
-            # CORRECCIÓN AQUÍ: Usamos encode para asegurar que siempre sean bytes
-            pdf_output = pdf.output()
-            pdf_bytes = pdf_output if isinstance(pdf_output, bytes) else pdf_output.encode('latin-1')
-            st.download_button("📥 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
+        # Lógica robusta para generar bytes de PDF
+        pdf_c = TabancuraPDF("PRESUPUESTO MÉDICO", orientation='L')
+        pdf_c.add_page()
+        pdf_c.set_font('Helvetica', 'B', 9); pdf_c.set_fill_color(245, 245, 245)
+        pdf_c.cell(0, 10, pdf_c.clean_txt(f" PACIENTE: {p['nombre_paciente']}  |  RUT: {rut_p}  |  FOLIO: {p['folio']}"), 0, 1, 'L', True)
+        
+        cols_map = {'Fonasa': 'Bono Fonasa', 'Copago': 'Copago', 'P. Gral': 'Particular General', 'P. Pref': 'Particular Preferencial'}
+        anchos = [20, 100, 31, 31, 31, 31]
+        pdf_c.set_font('Helvetica', 'B', 8); pdf_c.set_fill_color(*COLOR_NAVY); pdf_c.set_text_color(255)
+        for i, h in enumerate(['Código', 'Prestación'] + list(cols_map.keys())): pdf_c.cell(anchos[i], 10, pdf_c.clean_txt(h), 1, 0, 'C', True)
+        pdf_c.ln()
+        
+        pdf_c.set_text_color(0); pdf_c.set_font('Helvetica', '', 8)
+        tots = {k: 0 for k in cols_map.keys()}
+        for _, r in df_ed.iterrows():
+            n_full = str(r.get('Nombre prestación en Fonasa o Particular', ''))
+            nombre = (n_full[:55] + '...') if len(n_full) > 55 else n_full
+            pdf_c.cell(anchos[0], 8, pdf_c.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
+            pdf_c.cell(anchos[1], 8, pdf_c.clean_txt(nombre), 1, 0, 'L')
+            for i, (l, col_ex) in enumerate(cols_map.items()):
+                val = pd.to_numeric(r.get(col_ex, 0), errors='coerce') or 0
+                tots[l] += val
+                pdf_c.cell(anchos[i+2], 8, fmt_clp(val), 1, 0, 'R')
+            pdf_c.ln()
+        
+        # Uso de output() sin argumentos para evitar conflictos de tipos
+        try:
+            cot_bytes = pdf_c.output()
+            if isinstance(cot_bytes, str):
+                cot_bytes = cot_bytes.encode('latin-1')
+            st.download_button("📄 Descargar Cotización PDF", data=cot_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
+        except: st.error("Error al generar el archivo de cotización.")
 
     with col2:
-        if st.button("⚕️ GENERAR ORDEN MÉDICA"):
-            pdf = TabancuraPDF("ORDEN CLÍNICA")
-            pdf.add_page()
-            pdf.set_font('Helvetica', 'B', 10)
-            pdf.cell(0, 7, pdf.clean_txt(f"Paciente: {p['nombre_paciente']}"), 0, 1)
-            pdf.cell(0, 7, pdf.clean_txt(f"RUT: {rut_p}"), 0, 1)
-            pdf.ln(5)
-            pdf.set_fill_color(*COLOR_NAVY); pdf.set_text_color(255)
-            pdf.cell(35, 10, "CÓDIGO", 1, 0, 'C', True); pdf.cell(155, 10, "PRESTACIÓN", 1, 1, 'C', True)
-            pdf.set_text_color(0); pdf.set_font('Helvetica', '', 10)
-            for _, r in df_ed.iterrows():
-                n_ord = str(r.get('Nombre prestación en Fonasa o Particular', ''))
-                n_ord = (n_ord[:80] + '...') if len(n_ord) > 80 else n_ord
-                pdf.cell(35, 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
-                pdf.cell(155, 8, pdf.clean_txt(n_ord), 1, 1, 'L')
-            
-            pdf.ln(30)
-            curr_y = pdf.get_y()
-            pdf.line(70, curr_y, 140, curr_y)
-            pdf.cell(0, 8, pdf.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
-            
-            # CORRECCIÓN AQUÍ: Usamos encode para asegurar que siempre sean bytes
-            pdf_output = pdf.output()
-            orden_bytes = pdf_output if isinstance(pdf_output, bytes) else pdf_output.encode('latin-1')
-            st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+        pdf_o = TabancuraPDF("ORDEN CLÍNICA")
+        pdf_o.add_page()
+        pdf_o.set_font('Helvetica', 'B', 10)
+        pdf_o.cell(0, 7, pdf_o.clean_txt(f"Paciente: {p['nombre_paciente']}"), 0, 1)
+        pdf_o.cell(0, 7, pdf_o.clean_txt(f"RUT: {rut_p}"), 0, 1)
+        pdf_o.ln(5)
+        pdf_o.set_fill_color(*COLOR_NAVY); pdf_o.set_text_color(255)
+        pdf_o.cell(35, 10, "CÓDIGO", 1, 0, 'C', True); pdf_o.cell(155, 10, "PRESTACIÓN", 1, 1, 'C', True)
+        pdf_o.set_text_color(0); pdf_o.set_font('Helvetica', '', 10)
+        for _, r in df_ed.iterrows():
+            n_ord = str(r.get('Nombre prestación en Fonasa o Particular', ''))
+            n_ord = (n_ord[:80] + '...') if len(n_ord) > 80 else n_ord
+            pdf_o.cell(35, 8, pdf_o.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
+            pdf_o.cell(155, 8, pdf_o.clean_txt(n_ord), 1, 1, 'L')
+        
+        pdf_o.ln(30)
+        curr_y = pdf_o.get_y()
+        pdf_o.line(70, curr_y, 140, curr_y)
+        pdf_o.cell(0, 8, pdf_o.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
+        
+        try:
+            ord_bytes = pdf_o.output()
+            if isinstance(ord_bytes, str):
+                ord_bytes = ord_bytes.encode('latin-1')
+            st.download_button("⚕️ Descargar Orden PDF", data=ord_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+        except: st.error("Error al generar el archivo de orden.")
