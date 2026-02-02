@@ -58,7 +58,6 @@ class TabancuraPDF(FPDF):
         self.cell(0, 10, self.clean_txt(f"Pág. {self.page_no()} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), 0, 0, 'C')
 
     def clean_txt(self, t):
-        # Convertimos a string y manejamos caracteres latinos para FPDF
         return str(t).encode('latin-1', 'replace').decode('latin-1')
 
 def fmt_clp(v):
@@ -169,8 +168,13 @@ if st.session_state.paciente_activo:
                     pdf.cell(anchos[i+2], 8, fmt_clp(val), 1, 0, 'R')
                 pdf.ln()
             
-            # ELIMINADO .encode() PORQUE fpdf2 YA DEVUELVE BYTES
-            st.download_button("📥 Descargar Cotización", data=pdf.output(), file_name=f"Cotizacion_{p['folio']}.pdf")
+            pdf.set_font('Helvetica', 'B', 9); pdf.set_fill_color(235, 235, 235)
+            pdf.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
+            for l in cols_map.keys(): pdf.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
+            
+            # SOLUCIÓN: Conversión explícita a bytes
+            pdf_bytes = bytes(pdf.output())
+            st.download_button("📥 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
 
     with col2:
         if st.button("⚕️ GENERAR ORDEN MÉDICA"):
@@ -189,5 +193,6 @@ if st.session_state.paciente_activo:
                 pdf.cell(35, 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
                 pdf.cell(155, 8, pdf.clean_txt(n_ord), 1, 1, 'L')
             
-            # ELIMINADO .encode() PORQUE fpdf2 YA DEVUELVE BYTES
-            st.download_button("📥 Descargar Orden", data=pdf.output(), file_name=f"Orden_{p['folio']}.pdf")
+            # SOLUCIÓN: Conversión explícita a bytes
+            orden_bytes = bytes(pdf.output())
+            st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
