@@ -102,7 +102,7 @@ if c3.button("🔍 Buscar"):
             if res.status_code == 200:
                 st.session_state.resultados = res.json() if isinstance(res.json(), list) else [res.json()]
             elif tipo == "RUT":
-                st.info("RUT no registrado. Iniciando orden manual.")
+                st.info("RUT no registrado en la base de datos. Iniciando orden manual.")
                 st.session_state.paciente_activo = {"nombre_paciente": "PACIENTE NUEVO", "documento_id": val, "folio": "MANUAL", "fecha_nacimiento": "---"}
                 st.session_state.tabla_maestra = pd.DataFrame()
         except: st.error("Error de conexión.")
