@@ -20,13 +20,14 @@ SUCURSAL = {
 
 st.set_page_config(page_title="Portal Tabancura", page_icon="🏥", layout="wide")
 
-# Estilos CSS
+# Estilos CSS para mejorar la estética y compactar elementos
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
-    .stButton>button {{ background-color: #002B5B; color: white; border-radius: 8px; font-weight: 600; }}
-    .patient-header {{ background: white; padding: 20px; border-radius: 10px; border-left: 5px solid #002B5B; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+    .stButton>button {{ background-color: #002B5B; color: white; border-radius: 8px; font-weight: 600; width: 100%; }}
+    .patient-header {{ background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #002B5B; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }}
+    .stTextInput>div>div>input, .stSelectbox>div>div>div {{ padding: 5px 10px; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,7 +81,6 @@ def cargar_aranceles():
         return df
     except: return pd.DataFrame()
 
-# Sesión
 if 'tabla_maestra' not in st.session_state: st.session_state.tabla_maestra = pd.DataFrame()
 if 'paciente_activo' not in st.session_state: st.session_state.paciente_activo = None
 if 'resultados' not in st.session_state: st.session_state.resultados = []
@@ -89,28 +89,33 @@ df_aranceles = cargar_aranceles()
 
 st.title("🏥 Gestión Clínica Tabancura")
 
-# BÚSQUEDA
-c1, c2, c3 = st.columns([1, 2, 1])
-tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
-val = c2.text_input("Identificador:")
+with st.form("search_form", clear_on_submit=False):
+    c1, c2, c3 = st.columns([1, 2, 1])
+    tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
+    val = c2.text_input("Identificador:", placeholder="Ej: 12.345.678-9 o Folio")
+    submit_search = c3.form_submit_button("🔍 Buscar")
 
-if c3.button("🔍 Buscar"):
+if submit_search:
     if val:
         try:
             path = f"buscar/{val}" if tipo == "RUT" else f"folio/{val}"
             res = requests.get(f"{API_BASE_URL}/cotizaciones/{path}")
             if res.status_code == 200:
                 st.session_state.resultados = res.json() if isinstance(res.json(), list) else [res.json()]
+                st.session_state.paciente_activo = None
             elif tipo == "RUT":
                 st.info("RUT no registrado. Iniciando orden manual.")
                 st.session_state.paciente_activo = {"nombre_paciente": "PACIENTE NUEVO", "documento_id": val, "folio": "MANUAL", "fecha_nacimiento": "---"}
                 st.session_state.tabla_maestra = pd.DataFrame()
-        except: st.error("Error de conexión.")
+                st.session_state.resultados = []
+        except: st.error("Error de conexión con la API.")
 
 if st.session_state.resultados:
+    st.write("---")
+    r1, r2 = st.columns([3, 1])
     opcs = {f"Folio {c['folio']} | {c['nombre_paciente']}": c for c in st.session_state.resultados}
-    sel = st.selectbox("Seleccione registro:", list(opcs.keys()))
-    if st.button("📥 Cargar Datos"):
+    sel = r1.selectbox("Seleccione el registro exacto:", list(opcs.keys()))
+    if r2.button("📥 Cargar Datos"):
         p = opcs[sel]
         st.session_state.paciente_activo = p
         rd = requests.get(f"{API_BASE_URL}/cotizaciones/detalle/{p['folio']}")
@@ -127,12 +132,13 @@ if st.session_state.paciente_activo:
     rut_p = p.get("documento_id") or p.get("rut_paciente") or p.get("rut") or "---"
     
     st.markdown(f'''<div class="patient-header">
-        <h4>{p["nombre_paciente"]}</h4>
-        <p>Folio: {p["folio"]} | RUT: {rut_p} | F. Nac: {p.get("fecha_nacimiento", "---")}</p>
+        <h4 style="margin:0; color:#002B5B;">{p["nombre_paciente"]}</h4>
+        <p style="margin:5px 0 0 0; font-size:0.9em;"><b>Folio:</b> {p["folio"]} | <b>RUT:</b> {rut_p} | <b>F. Nac:</b> {p.get("fecha_nacimiento", "---")}</p>
     </div>''', unsafe_allow_html=True)
     
-    extras = st.multiselect("Agregar exámenes:", df_aranceles['display'].tolist())
-    if st.button("➕ Añadir"):
+    a1, a2 = st.columns([3, 1])
+    extras = a1.multiselect("Agregar exámenes adicionales:", df_aranceles['display'].tolist())
+    if a2.button("➕ Añadir"):
         nuevos = df_aranceles[df_aranceles['display'].isin(extras)].drop(columns=['display'])
         st.session_state.tabla_maestra = pd.concat([st.session_state.tabla_maestra, nuevos], ignore_index=True).drop_duplicates()
         st.rerun()
@@ -172,7 +178,9 @@ if st.session_state.paciente_activo:
             pdf.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
             for l in cols_map.keys(): pdf.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
             
-            pdf_bytes = bytes(pdf.output())
+            # CORRECCIÓN AQUÍ: Usamos encode para asegurar que siempre sean bytes
+            pdf_output = pdf.output()
+            pdf_bytes = pdf_output if isinstance(pdf_output, bytes) else pdf_output.encode('latin-1')
             st.download_button("📥 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
 
     with col2:
@@ -197,5 +205,7 @@ if st.session_state.paciente_activo:
             pdf.line(70, curr_y, 140, curr_y)
             pdf.cell(0, 8, pdf.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
             
-            orden_bytes = bytes(pdf.output())
-            st.download_button("📥 Descargar Orden médica", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+            # CORRECCIÓN AQUÍ: Usamos encode para asegurar que siempre sean bytes
+            pdf_output = pdf.output()
+            orden_bytes = pdf_output if isinstance(pdf_output, bytes) else pdf_output.encode('latin-1')
+            st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
