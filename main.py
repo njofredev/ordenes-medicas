@@ -198,4 +198,4 @@ if st.session_state.paciente_activo:
             pdf.cell(0, 8, pdf.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
             
             orden_bytes = bytes(pdf.output())
-            st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+            st.download_button("📥 Descargar Orden médica", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
