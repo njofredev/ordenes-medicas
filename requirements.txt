@@ -1,8 +1,5 @@
-streamlit>=1.30.0
-pandas
-fpdf2
-sqlalchemy
 streamlit
 requests
 pandas
+fpdf2
 openpyxl
