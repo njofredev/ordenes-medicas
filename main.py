@@ -5,6 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import os
 import io
+import pytz  # Librería para manejar zonas horarias
 
 # --- CONFIGURACIÓN SUCURSAL ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
@@ -56,7 +57,10 @@ class TabancuraPDF(FPDF):
         self.set_y(-15)
         self.set_font('Helvetica', 'I', 8)
         self.set_text_color(150)
-        self.cell(0, 10, self.clean_txt(f"Pág. {self.page_no()} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), 0, 0, 'C')
+        # --- CORRECCIÓN DE HORA CHILE ---
+        tz_chile = pytz.timezone('America/Santiago')
+        hora_chile = datetime.now(tz_chile).strftime('%d/%m/%Y %H:%M')
+        self.cell(0, 10, self.clean_txt(f"Pág. {self.page_no()} | Generado: {hora_chile}"), 0, 0, 'C')
 
     def clean_txt(self, t):
         return str(t).encode('latin-1', 'replace').decode('latin-1')
@@ -175,7 +179,6 @@ if st.session_state.paciente_activo:
         pdf_c.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
         for l in cols_map.keys(): pdf_c.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
         
-        # LÓGICA REPARADA PARA DESCARGA
         pdf_out = pdf_c.output(dest='S')
         pdf_bytes = pdf_out if isinstance(pdf_out, (bytes, bytearray)) else pdf_out.encode('latin-1')
         st.download_button("📄 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
@@ -200,7 +203,6 @@ if st.session_state.paciente_activo:
         pdf_o.line(70, curr_y, 140, curr_y)
         pdf_o.cell(0, 8, pdf_o.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
         
-        # LÓGICA REPARADA PARA DESCARGA
         ord_out = pdf_o.output(dest='S')
         ord_bytes = ord_out if isinstance(ord_out, (bytes, bytearray)) else ord_out.encode('latin-1')
         st.download_button("⚕️ Descargar Orden Médica", data=ord_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")

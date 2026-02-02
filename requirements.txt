@@ -3,3 +3,4 @@ requests
 pandas
 fpdf2
 openpyxl
+pytz
