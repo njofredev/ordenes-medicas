@@ -1,0 +1,13 @@
+# Entorno Virtual
+venv/
+.venv/
+env/
+
+# Variables de Entorno (CRÍTICO)
+.env
+
+# Archivos de Sistema y temporales
+__pycache__/
+*.pyc
+.DS_Store
+.streamlit/
