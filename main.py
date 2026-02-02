@@ -5,7 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import os
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN ACTUALIZADA DE SUCURSAL ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
 EXCEL_FILE = "aranceles.xlsx"
 COLOR_NAVY = [0, 43, 91]
@@ -14,7 +14,7 @@ COLOR_GREY = [100, 100, 100]
 SUCURSAL = {
     "nombre": "POLICLÍNICO TABANCURA",
     "direccion": "Av. Vitacura #8620, Vitacura, Santiago",
-    "telefono": "+562 2933 6740",
+    "telefono": "+56 2 2933 6740",
     "web": "https://www.policlinicotabancura.cl"
 }
 
@@ -172,7 +172,6 @@ if st.session_state.paciente_activo:
             pdf.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
             for l in cols_map.keys(): pdf.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
             
-            # SOLUCIÓN: Conversión explícita a bytes
             pdf_bytes = bytes(pdf.output())
             st.download_button("📥 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
 
@@ -193,6 +192,11 @@ if st.session_state.paciente_activo:
                 pdf.cell(35, 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
                 pdf.cell(155, 8, pdf.clean_txt(n_ord), 1, 1, 'L')
             
-            # SOLUCIÓN: Conversión explícita a bytes
+            # --- RESTAURACIÓN DE LÍNEA DE FIRMA ---
+            pdf.ln(30)
+            curr_y = pdf.get_y()
+            pdf.line(70, curr_y, 140, curr_y)
+            pdf.cell(0, 8, self.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
+            
             orden_bytes = bytes(pdf.output())
             st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
