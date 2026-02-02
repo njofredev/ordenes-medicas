@@ -5,7 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import os
 
-# --- CONFIGURACIÓN ESTÁTICA ---
+# --- CONFIGURACIÓN ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
 EXCEL_FILE = "aranceles.xlsx"
 COLOR_NAVY = [0, 43, 91]
@@ -58,6 +58,7 @@ class TabancuraPDF(FPDF):
         self.cell(0, 10, self.clean_txt(f"Pág. {self.page_no()} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), 0, 0, 'C')
 
     def clean_txt(self, t):
+        # Convertimos a string y manejamos caracteres latinos para FPDF
         return str(t).encode('latin-1', 'replace').decode('latin-1')
 
 def fmt_clp(v):
@@ -68,6 +69,8 @@ def fmt_clp(v):
 
 @st.cache_data
 def cargar_aranceles():
+    if not os.path.exists(EXCEL_FILE):
+        return pd.DataFrame()
     try:
         df = pd.read_excel(EXCEL_FILE)
         df.columns = [c.strip() for c in df.columns]
@@ -87,51 +90,28 @@ df_aranceles = cargar_aranceles()
 
 st.title("🏥 Gestión Clínica Tabancura")
 
-with st.sidebar:
-    if st.button("🧹 Nueva Consulta / Limpiar"):
-        st.session_state.tabla_maestra = pd.DataFrame()
-        st.session_state.paciente_activo = None
-        st.session_state.resultados = []
-        st.rerun()
-
-# 1. BÚSQUEDA MEJORADA
+# BÚSQUEDA
 c1, c2, c3 = st.columns([1, 2, 1])
 tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
 val = c2.text_input("Identificador:")
 
 if c3.button("🔍 Buscar"):
-    if not val:
-        st.warning("Debe ingresar un valor para buscar.")
-    else:
+    if val:
         try:
-            # Corrección: Asegurar que el endpoint de folio use la variable 'val' correctamente
             path = f"buscar/{val}" if tipo == "RUT" else f"folio/{val}"
             res = requests.get(f"{API_BASE_URL}/cotizaciones/{path}")
-            
             if res.status_code == 200:
                 st.session_state.resultados = res.json() if isinstance(res.json(), list) else [res.json()]
-                st.success("Registro localizado.")
-            else:
-                # Si es RUT y no existe, permitimos creación manual
-                if tipo == "RUT":
-                    st.info(f"El RUT {val} no registra cotizaciones previas. Puede iniciar una nueva.")
-                    st.session_state.paciente_activo = {
-                        "nombre_paciente": "PACIENTE NUEVO / NO REGISTRADO",
-                        "documento_id": val,
-                        "folio": "NUEVO",
-                        "fecha_nacimiento": "---"
-                    }
-                    st.session_state.tabla_maestra = pd.DataFrame() # Tabla vacía para empezar de cero
-                else:
-                    st.error("Folio no encontrado en la base de datos.")
-        except:
-            st.error("Error de conexión con la API.")
+            elif tipo == "RUT":
+                st.info("RUT no registrado. Iniciando orden manual.")
+                st.session_state.paciente_activo = {"nombre_paciente": "PACIENTE NUEVO", "documento_id": val, "folio": "MANUAL", "fecha_nacimiento": "---"}
+                st.session_state.tabla_maestra = pd.DataFrame()
+        except: st.error("Error de conexión.")
 
-# 2. SELECCIÓN DE RESULTADOS (Si existen)
 if st.session_state.resultados:
     opcs = {f"Folio {c['folio']} | {c['nombre_paciente']}": c for c in st.session_state.resultados}
     sel = st.selectbox("Seleccione registro:", list(opcs.keys()))
-    if st.button("📥 Cargar Datos de Cotización"):
+    if st.button("📥 Cargar Datos"):
         p = opcs[sel]
         st.session_state.paciente_activo = p
         rd = requests.get(f"{API_BASE_URL}/cotizaciones/detalle/{p['folio']}")
@@ -143,84 +123,62 @@ if st.session_state.resultados:
                                                      left_on='codigo_examen', right_on='Codigo Ingreso', how='left').drop(columns=['codigo_examen'])
             st.rerun()
 
-# 3. INTERFAZ DE TRABAJO (EDICIÓN)
 if st.session_state.paciente_activo:
     p = st.session_state.paciente_activo
+    rut_p = p.get("documento_id") or p.get("rut_paciente") or p.get("rut") or "---"
     
-    # Datos del paciente (Priorizando documento_id para el RUT)
-    rut_paciente = p.get("documento_id") or p.get("rut_paciente") or p.get("rut") or "---"
-    fecha_nac = p.get("fecha_nacimiento") or "---"
-
     st.markdown(f'''<div class="patient-header">
         <h4>{p["nombre_paciente"]}</h4>
-        <p>Folio: {p["folio"]} | RUT: {rut_paciente} | F. Nac: {fecha_nac}</p>
+        <p>Folio: {p["folio"]} | RUT: {rut_p} | F. Nac: {p.get("fecha_nacimiento", "---")}</p>
     </div>''', unsafe_allow_html=True)
     
-    st.write("##")
-    st.subheader("Selección de Prestaciones")
-    extras = st.multiselect("Añadir exámenes desde Arancel:", df_aranceles['display'].tolist())
-    if st.button("➕ Añadir a la Orden"):
+    extras = st.multiselect("Agregar exámenes:", df_aranceles['display'].tolist())
+    if st.button("➕ Añadir"):
         nuevos = df_aranceles[df_aranceles['display'].isin(extras)].drop(columns=['display'])
         st.session_state.tabla_maestra = pd.concat([st.session_state.tabla_maestra, nuevos], ignore_index=True).drop_duplicates()
         st.rerun()
 
-    # Editor de Tabla
     df_ed = st.data_editor(st.session_state.tabla_maestra, num_rows="dynamic", use_container_width=True)
     st.session_state.tabla_maestra = df_ed
 
-    st.write("##")
     col1, col2 = st.columns(2)
-
     with col1:
-        if st.button("📄 GENERAR COTIZACIÓN PDF"):
+        if st.button("📄 GENERAR COTIZACIÓN"):
             pdf = TabancuraPDF("PRESUPUESTO MÉDICO", orientation='L')
             pdf.add_page()
             pdf.set_font('Helvetica', 'B', 9); pdf.set_fill_color(245, 245, 245)
+            info = f" PACIENTE: {p['nombre_paciente']}  |  RUT: {rut_p}  |  FOLIO: {p['folio']}"
+            pdf.cell(0, 10, pdf.clean_txt(info), 0, 1, 'L', True)
             
-            info_paciente = f" PACIENTE: {p['nombre_paciente']}  |  RUT: {rut_paciente}  |  F. NAC: {fecha_nac}  |  FOLIO: {p['folio']}"
-            pdf.cell(0, 10, pdf.clean_txt(info_paciente), 0, 1, 'L', True)
-            pdf.ln(2)
-
             cols_map = {'Fonasa': 'Bono Fonasa', 'Copago': 'Copago', 'P. Gral': 'Particular General', 'P. Pref': 'Particular Preferencial'}
             anchos = [20, 100, 31, 31, 31, 31]
-            headers = ['Código', 'Prestación'] + list(cols_map.keys())
-            
             pdf.set_font('Helvetica', 'B', 8); pdf.set_fill_color(*COLOR_NAVY); pdf.set_text_color(255)
-            for i, h in enumerate(headers): pdf.cell(anchos[i], 10, pdf.clean_txt(h), 1, 0, 'C', True)
+            for i, h in enumerate(['Código', 'Prestación'] + list(cols_map.keys())): pdf.cell(anchos[i], 10, pdf.clean_txt(h), 1, 0, 'C', True)
             pdf.ln()
             
             pdf.set_text_color(0); pdf.set_font('Helvetica', '', 8)
             tots = {k: 0 for k in cols_map.keys()}
-            
             for _, r in df_ed.iterrows():
-                nombre_full = str(r.get('Nombre prestación en Fonasa o Particular', ''))
-                nombre = (nombre_full[:55] + '...') if len(nombre_full) > 55 else nombre_full
-                
+                n_full = str(r.get('Nombre prestación en Fonasa o Particular', ''))
+                nombre = (n_full[:55] + '...') if len(n_full) > 55 else n_full
                 pdf.cell(anchos[0], 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
                 pdf.cell(anchos[1], 8, pdf.clean_txt(nombre), 1, 0, 'L')
-                
                 for i, (l, col_ex) in enumerate(cols_map.items()):
-                    val = pd.to_numeric(r.get(col_ex, 0), errors='coerce')
-                    val = 0 if pd.isna(val) else val
+                    val = pd.to_numeric(r.get(col_ex, 0), errors='coerce') or 0
                     tots[l] += val
                     pdf.cell(anchos[i+2], 8, fmt_clp(val), 1, 0, 'R')
                 pdf.ln()
-
-            pdf.set_font('Helvetica', 'B', 9); pdf.set_fill_color(235, 235, 235)
-            pdf.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
-            for l in cols_map.keys():
-                pdf.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
             
-            st.download_button("📥 Descargar Cotización", data=pdf.output(dest='S').encode('latin-1', 'replace'), file_name=f"Cotizacion_{p['folio']}.pdf")
+            # ELIMINADO .encode() PORQUE fpdf2 YA DEVUELVE BYTES
+            st.download_button("📥 Descargar Cotización", data=pdf.output(), file_name=f"Cotizacion_{p['folio']}.pdf")
 
     with col2:
-        if st.button("⚕️ GENERAR ORDEN MÉDICA PDF"):
+        if st.button("⚕️ GENERAR ORDEN MÉDICA"):
             pdf = TabancuraPDF("ORDEN CLÍNICA")
             pdf.add_page()
             pdf.set_font('Helvetica', 'B', 10)
             pdf.cell(0, 7, pdf.clean_txt(f"Paciente: {p['nombre_paciente']}"), 0, 1)
-            pdf.cell(0, 7, pdf.clean_txt(f"RUT: {rut_paciente}  |  F. Nac: {fecha_nac}"), 0, 1)
-            pdf.cell(0, 7, pdf.clean_txt(f"Folio Ref: {p['folio']}"), 0, 1)
+            pdf.cell(0, 7, pdf.clean_txt(f"RUT: {rut_p}"), 0, 1)
             pdf.ln(5)
             pdf.set_fill_color(*COLOR_NAVY); pdf.set_text_color(255)
             pdf.cell(35, 10, "CÓDIGO", 1, 0, 'C', True); pdf.cell(155, 10, "PRESTACIÓN", 1, 1, 'C', True)
@@ -230,6 +188,6 @@ if st.session_state.paciente_activo:
                 n_ord = (n_ord[:80] + '...') if len(n_ord) > 80 else n_ord
                 pdf.cell(35, 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
                 pdf.cell(155, 8, pdf.clean_txt(n_ord), 1, 1, 'L')
-            pdf.ln(30); pdf.line(70, pdf.get_y(), 140, pdf.get_y())
-            pdf.cell(0, 8, "Firma Médico / Timbre Sucursal", 0, 1, 'C')
-            st.download_button("📥 Descargar Orden", data=pdf.output(dest='S').encode('latin-1', 'replace'), file_name=f"Orden_{p['folio']}.pdf")
+            
+            # ELIMINADO .encode() PORQUE fpdf2 YA DEVUELVE BYTES
+            st.download_button("📥 Descargar Orden", data=pdf.output(), file_name=f"Orden_{p['folio']}.pdf")
