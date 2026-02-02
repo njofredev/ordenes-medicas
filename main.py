@@ -4,8 +4,7 @@ import pandas as pd
 from fpdf import FPDF
 from datetime import datetime
 import os
-import io
-import pytz  # Librería para manejar zonas horarias
+import pytz
 
 # --- CONFIGURACIÓN SUCURSAL ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
@@ -22,7 +21,6 @@ SUCURSAL = {
 
 st.set_page_config(page_title="Portal Tabancura", page_icon="🏥", layout="wide")
 
-# Estilos CSS
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -57,7 +55,6 @@ class TabancuraPDF(FPDF):
         self.set_y(-15)
         self.set_font('Helvetica', 'I', 8)
         self.set_text_color(150)
-        # --- CORRECCIÓN DE HORA CHILE ---
         tz_chile = pytz.timezone('America/Santiago')
         hora_chile = datetime.now(tz_chile).strftime('%d/%m/%Y %H:%M')
         self.cell(0, 10, self.clean_txt(f"Pág. {self.page_no()} | Generado: {hora_chile}"), 0, 0, 'C')
@@ -83,7 +80,6 @@ def cargar_aranceles():
         return df
     except: return pd.DataFrame()
 
-# Sesión
 if 'tabla_maestra' not in st.session_state: st.session_state.tabla_maestra = pd.DataFrame()
 if 'paciente_activo' not in st.session_state: st.session_state.paciente_activo = None
 if 'resultados' not in st.session_state: st.session_state.resultados = []
@@ -92,7 +88,6 @@ df_aranceles = cargar_aranceles()
 
 st.title("🏥 Gestión Clínica Tabancura")
 
-# BÚSQUEDA
 with st.form("search_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 2])
     tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
@@ -113,7 +108,6 @@ if submit_search and val:
             st.session_state.resultados = []
     except: st.error("Error de conexión.")
 
-# SELECCIÓN DE REGISTRO
 if st.session_state.resultados:
     st.write("---")
     opcs = {f"Folio {c['folio']} | {c['nombre_paciente']}": c for c in st.session_state.resultados}
@@ -130,7 +124,6 @@ if st.session_state.resultados:
                                                      left_on='codigo_examen', right_on='Codigo Ingreso', how='left').drop(columns=['codigo_examen'])
             st.rerun()
 
-# ÁREA DE TRABAJO
 if st.session_state.paciente_activo:
     p = st.session_state.paciente_activo
     rut_p = p.get("documento_id") or p.get("rut_paciente") or p.get("rut") or "---"
@@ -179,9 +172,8 @@ if st.session_state.paciente_activo:
         pdf_c.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
         for l in cols_map.keys(): pdf_c.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
         
-        pdf_out = pdf_c.output(dest='S')
-        pdf_bytes = pdf_out if isinstance(pdf_out, (bytes, bytearray)) else pdf_out.encode('latin-1')
-        st.download_button("📄 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
+        # CAMBIO CLAVE: Generación directa a bytearray
+        st.download_button("📄 Descargar Cotización", data=pdf_c.output(), file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
 
     with col2:
         # ORDEN
@@ -203,6 +195,5 @@ if st.session_state.paciente_activo:
         pdf_o.line(70, curr_y, 140, curr_y)
         pdf_o.cell(0, 8, pdf_o.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
         
-        ord_out = pdf_o.output(dest='S')
-        ord_bytes = ord_out if isinstance(ord_out, (bytes, bytearray)) else ord_out.encode('latin-1')
-        st.download_button("⚕️ Descargar Orden Médica", data=ord_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+        # CAMBIO CLAVE: Generación directa a bytearray
+        st.download_button("⚕️ Descargar Orden Médica", data=pdf_o.output(), file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
