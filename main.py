@@ -88,7 +88,7 @@ df_aranceles = cargar_aranceles()
 
 st.title("🏥 Gestión Clínica Tabancura")
 
-# BÚSQUEDA (CON SOPORTE ENTER)
+# BÚSQUEDA
 with st.form("search_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 2])
     tipo = c1.selectbox("Buscar por:", ["RUT", "Folio"])
@@ -120,7 +120,6 @@ if st.session_state.resultados:
         rd = requests.get(f"{API_BASE_URL}/cotizaciones/detalle/{p['folio']}")
         if rd.status_code == 200:
             df_api = pd.DataFrame(rd.json())
-            # LÓGICA DE CRUCE RESTAURADA
             df_api['codigo_examen'] = df_api['codigo_examen'].astype(str).str.strip()
             df_aranceles['Codigo Ingreso'] = df_aranceles['Codigo Ingreso'].astype(str).str.strip()
             st.session_state.tabla_maestra = pd.merge(df_api[['codigo_examen']], df_aranceles.drop(columns=['display']), 
@@ -176,9 +175,10 @@ if st.session_state.paciente_activo:
         pdf_c.cell(anchos[0] + anchos[1], 10, "TOTALES ESTIMADOS", 1, 0, 'R', True)
         for l in cols_map.keys(): pdf_c.cell(31, 10, fmt_clp(tots[l]), 1, 0, 'R', True)
         
-        # SALIDA SEGURA A BYTES
-        c_buf = io.BytesIO(pdf_c.output(dest='S').encode('latin-1'))
-        st.download_button("📄 Descargar Cotización", data=c_buf, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
+        # LÓGICA REPARADA PARA DESCARGA
+        pdf_out = pdf_c.output(dest='S')
+        pdf_bytes = pdf_out if isinstance(pdf_out, (bytes, bytearray)) else pdf_out.encode('latin-1')
+        st.download_button("📄 Descargar Cotización", data=pdf_bytes, file_name=f"Cotizacion_{p['folio']}.pdf", mime="application/pdf")
 
     with col2:
         # ORDEN
@@ -200,6 +200,7 @@ if st.session_state.paciente_activo:
         pdf_o.line(70, curr_y, 140, curr_y)
         pdf_o.cell(0, 8, pdf_o.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
         
-        # SALIDA SEGURA A BYTES
-        o_buf = io.BytesIO(pdf_o.output(dest='S').encode('latin-1'))
-        st.download_button("⚕️ Descargar Orden Médica", data=o_buf, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
+        # LÓGICA REPARADA PARA DESCARGA
+        ord_out = pdf_o.output(dest='S')
+        ord_bytes = ord_out if isinstance(ord_out, (bytes, bytearray)) else ord_out.encode('latin-1')
+        st.download_button("⚕️ Descargar Orden Médica", data=ord_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
