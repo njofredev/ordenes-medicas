@@ -5,7 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import os
 
-# --- CONFIGURACIÓN ACTUALIZADA DE SUCURSAL ---
+# --- CONFIGURACIÓN SUCURSAL ---
 API_BASE_URL = "https://api.policlinicotabancura.cl"
 EXCEL_FILE = "aranceles.xlsx"
 COLOR_NAVY = [0, 43, 91]
@@ -102,7 +102,7 @@ if c3.button("🔍 Buscar"):
             if res.status_code == 200:
                 st.session_state.resultados = res.json() if isinstance(res.json(), list) else [res.json()]
             elif tipo == "RUT":
-                st.info("RUT no registrado en la base de datos. Iniciando orden manual.")
+                st.info("RUT no registrado. Iniciando orden manual.")
                 st.session_state.paciente_activo = {"nombre_paciente": "PACIENTE NUEVO", "documento_id": val, "folio": "MANUAL", "fecha_nacimiento": "---"}
                 st.session_state.tabla_maestra = pd.DataFrame()
         except: st.error("Error de conexión.")
@@ -192,11 +192,10 @@ if st.session_state.paciente_activo:
                 pdf.cell(35, 8, pdf.clean_txt(r.get('Codigo Ingreso', '')), 1, 0, 'C')
                 pdf.cell(155, 8, pdf.clean_txt(n_ord), 1, 1, 'L')
             
-            # --- RESTAURACIÓN DE LÍNEA DE FIRMA ---
             pdf.ln(30)
             curr_y = pdf.get_y()
             pdf.line(70, curr_y, 140, curr_y)
-            pdf.cell(0, 8, self.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
+            pdf.cell(0, 8, pdf.clean_txt("Firma y Timbre Médico"), 0, 1, 'C')
             
             orden_bytes = bytes(pdf.output())
             st.download_button("📥 Descargar Orden", data=orden_bytes, file_name=f"Orden_{p['folio']}.pdf", mime="application/pdf")
